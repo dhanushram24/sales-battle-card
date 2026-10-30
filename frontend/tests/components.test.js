@@ -24,6 +24,15 @@ test('zero score renders as zero and does not invent decomposition values', () =
   assert.doesNotMatch(html, />8\.8|>9\.2|Rajesh|Apex|high enthusiasm/);
 });
 
+test('insufficient evidence does not display a provisional score as readiness', () => {
+  const html = render(DealHealthGauge, { battlecard: {
+    overall_score: 5, purchase_outlook: 'insufficient_evidence', classification: 'Hot',
+  } });
+  assert.match(html, />N\/A</);
+  assert.match(html, /More customer evidence is needed/);
+  assert.doesNotMatch(html, />5\.0<|Hot/);
+});
+
 test('empty evidence does not generate fake competitor offers or talk tracks', () => {
   const html = render(CompetitorRadar, {}) + render(RepActionCoPilot, {});
   assert.doesNotMatch(html, /Salesforce|waive|Friday|35 sales|75\/user/);

@@ -56,6 +56,7 @@ class Settings(BaseModel):
     # OpenAI
     OPENAI_API_KEY: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     OPENAI_MODEL: str = Field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    OPENAI_SUMMARY_MODEL: str = Field(default_factory=lambda: os.getenv("OPENAI_SUMMARY_MODEL", ""))
 
     @property
     def database_url(self) -> URL:

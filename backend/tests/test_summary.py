@@ -51,6 +51,7 @@ class SummaryTests(unittest.TestCase):
         from app.schemas.battlecard import BattlecardAIOutput
         settings.OPENAI_API_KEY = 'test'
         settings.OPENAI_MODEL = 'gpt-4o-mini'
+        settings.OPENAI_SUMMARY_MODEL = ''
         settings.MAX_EVIDENCE_BYTES = 240000
         analyzer = OpenAILeadAnalyzer()
         analyzer.client = Mock()

@@ -5,9 +5,10 @@ import json
 from threading import Lock
 from typing import Optional
 from app.repositories.base import BaseLeadRepository
-from app.services.analyzer import OpenAILeadAnalyzer
+from app.services.analyzer import OpenAILeadAnalyzer, ANALYSIS_VERSION
 from app.schemas.battlecard import BattlecardResponse, BattlecardAIOutput
 from app.core.config import settings
+from app.services.summary import SUMMARY_VERSION
 
 logger = logging.getLogger(__name__)
 # Prevent overlapping analysis requests for a lead in this application process.
@@ -21,7 +22,7 @@ class AnalysisRequiredError(RuntimeError):
 class BattlecardService:
     def __init__(self, repo: BaseLeadRepository, analyzer: Optional[OpenAILeadAnalyzer] = None):
         self.repo = repo
-        self.analyzer = analyzer or OpenAILeadAnalyzer()
+        self.analyzer = analyzer or OpenAILeadAnalyzer(summary_store=repo)
 
     def get_battlecard(self, lead_id: str, force_refresh: bool = False, allow_analysis: bool = True) -> BattlecardResponse:
         lock = _analysis_locks[int(hashlib.sha256(lead_id.encode()).hexdigest(), 16) % len(_analysis_locks)]
@@ -48,12 +49,15 @@ class BattlecardService:
             "lead": lead.model_dump(mode="json", exclude={"interactions"}),
             "interactions": [i.model_dump(mode="json") for i in interactions],
             "model": settings.OPENAI_MODEL,
+            "summary_model": settings.OPENAI_SUMMARY_MODEL or settings.OPENAI_MODEL,
+            "summary_version": SUMMARY_VERSION,
+            "analysis_prompt_version": ANALYSIS_VERSION,
         }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
         # Cached analysis is only valid for the current profile, evidence and model.
         if not force_refresh:
             cached_data = self.repo.get_cached_battlecard(lead_id)
-            if cached_data and cached_data.get("analysis_version") == "evidence-v2" and cached_data.get("source_fingerprint") == fingerprint:
+            if cached_data and cached_data.get("analysis_version") == "evidence-v3" and cached_data.get("source_fingerprint") == fingerprint:
                 try:
                     return BattlecardResponse(**cached_data)
                 except Exception as e:

@@ -28,3 +28,13 @@ class BaseLeadRepository(ABC):
     def save_battlecard(self, lead_id: str, data: Dict[str, Any]) -> None:
         """Store/cache latest battlecard and score for a lead."""
         pass
+
+    @abstractmethod
+    def get_evidence_memory(self, lead_id: str) -> Optional[Dict[str, Any]]:
+        """Read the latest structured evidence snapshot for incremental summaries."""
+        pass
+
+    @abstractmethod
+    def save_evidence_memory(self, lead_id: str, data: Dict[str, Any]) -> None:
+        """Persist a completed summary even if subsequent scoring fails."""
+        pass

@@ -35,3 +35,4 @@ Thumbs.db
 
 # Local QA artifacts and browser profiles
 .qa/
+eval-results.json

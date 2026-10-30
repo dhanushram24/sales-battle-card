@@ -274,3 +274,37 @@ class MySQLLeadRepository(BaseLeadRepository):
         except Exception as e:
             self.db.rollback()
             raise
+
+    def _ensure_evidence_table(self):
+        self.db.execute(text("""
+            CREATE TABLE IF NOT EXISTS lead_evidence_memory (
+                lead_id VARCHAR(100) PRIMARY KEY,
+                memory_json LONGTEXT NOT NULL,
+                updated_at DATETIME NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """))
+        self.db.commit()
+
+    def get_evidence_memory(self, lead_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            self._ensure_evidence_table()
+            row = self.db.execute(text("SELECT memory_json FROM lead_evidence_memory WHERE lead_id = :lead_id"),
+                                  {"lead_id": lead_id}).mappings().first()
+            return json.loads(row["memory_json"]) if row else None
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def save_evidence_memory(self, lead_id: str, data: Dict[str, Any]) -> None:
+        try:
+            self._ensure_evidence_table()
+            self.db.execute(text("""
+                INSERT INTO lead_evidence_memory (lead_id, memory_json, updated_at)
+                VALUES (:lead_id, :memory_json, :updated_at)
+                ON DUPLICATE KEY UPDATE memory_json = VALUES(memory_json), updated_at = VALUES(updated_at)
+            """), {"lead_id": lead_id, "memory_json": json.dumps(data, ensure_ascii=False),
+                   "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)})
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise

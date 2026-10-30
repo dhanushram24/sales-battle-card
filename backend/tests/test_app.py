@@ -132,6 +132,14 @@ class CacheTests(unittest.TestCase):
         self.repo.get_lead_by_id.return_value.stage = 'Closed Won'
         with self.assertRaises(AnalysisRequiredError): self.service.get_battlecard('1', allow_analysis=False)
 
+    def test_scoring_prompt_change_invalidates_cached_score(self):
+        first = self.service.get_battlecard('1')
+        self.repo.get_cached_battlecard.return_value = first.model_dump()
+        with patch('app.services.battlecard_service.ANALYSIS_VERSION', 'changed-prompt'):
+            with self.assertRaises(AnalysisRequiredError):
+                self.service.get_battlecard('1', allow_analysis=False)
+        self.assertEqual(self.analyzer.analyze_lead.call_count, 1)
+
     def test_failed_cache_write_reported_to_ui(self):
         self.repo.save_battlecard.side_effect = RuntimeError('DB unavailable')
         self.assertFalse(self.service.get_battlecard('1').cache_saved)

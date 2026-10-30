@@ -19,6 +19,7 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
   );
 
   const score = battlecard.overall_score ?? 0;
+  const insufficientEvidence = battlecard.purchase_outlook === 'insufficient_evidence';
   const circumference = 314;
   const strokeDashoffset = circumference - (score / 10) * circumference;
 
@@ -32,6 +33,11 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
   } else if (score < 8.5) {
     gaugeColor = 'var(--amber)';
     classificationClass = 'warm';
+  }
+  if (insufficientEvidence) {
+    gaugeColor = 'var(--text-muted)';
+    classificationClass = 'warm';
+    classificationText = 'Insufficient evidence';
   }
 
   const breakdown = battlecard.score_breakdown || {};
@@ -74,18 +80,19 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
             r="50"
             style={{
               stroke: gaugeColor,
-              strokeDashoffset: strokeDashoffset,
+              strokeDashoffset: insufficientEvidence ? circumference : strokeDashoffset,
             }}
           ></circle>
         </svg>
         <div className="gauge-number-box">
-          <span className="score-number">{score.toFixed(1)}</span>
-          <span className="score-max">/10</span>
+          <span className="score-number">{insufficientEvidence ? 'N/A' : score.toFixed(1)}</span>
+          {!insufficientEvidence && <span className="score-max">/10</span>}
           <span className="score-label">Deal Health Score</span>
         </div>
       </div>
 
       {/* Classification Badge */}
+      {insufficientEvidence && <p className="reasoning-text" role="status">More customer evidence is needed to assess purchase readiness.</p>}
       <div className="classification-box">
         <span className={`classification-badge ${classificationClass}`}>
           🔥 {classificationText}
@@ -230,6 +237,31 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
                 catch { return battlecard.evidence_summary; }
               })()}
             </p>
+          </details>
+        )}
+        {battlecard.analysis_metrics && (
+          <details style={{ marginTop: '12px' }}>
+            <summary>Analysis usage</summary>
+            <p className="reasoning-text">
+              Summary: {({ direct: 'not needed for this short history', rebuilt: 'built from the current history', incremental: 'updated with new conversations', reused: 'reused without a new summary call' })[battlecard.analysis_metrics.summary_mode]}.
+              {' '}Previously summarized interactions reused: {battlecard.analysis_metrics.reused_interactions}.
+            </p>
+            <p className="reasoning-text">
+              Scoring evidence: {battlecard.scoring_evidence_utf8_bytes?.toLocaleString()} bytes
+              {' '}(original history: {battlecard.source_utf8_bytes?.toLocaleString()} bytes). Byte counts exclude prompts and are not token counts.
+            </p>
+            {['summary_usage', 'scoring_usage'].map(stage => {
+              const usage = battlecard.analysis_metrics[stage];
+              return usage && <p className="reasoning-text" key={stage}>
+                {stage === 'summary_usage' ? 'Summarization' : 'Scoring'}: {usage.calls} completed API calls;
+                {' '}input tokens: {usage.input_tokens?.toLocaleString() ?? 'not reported'};
+                {' '}output tokens: {usage.output_tokens?.toLocaleString() ?? 'not reported'}.
+              </p>;
+            })}
+            <p className="reasoning-text">Usage is for the generation of this saved score. Initial summarization can add cost.</p>
+            {!battlecard.analysis_metrics.summary_cache_saved && (
+              <p className="reasoning-text" role="alert">The evidence summary was not saved. Future analysis may need to summarize the history again.</p>
+            )}
           </details>
         )}
       </div>

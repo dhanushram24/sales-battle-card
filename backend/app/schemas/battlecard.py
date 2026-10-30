@@ -48,14 +48,10 @@ class ObjectionDetail(BaseModel):
     recommended_handling: str = Field(..., description="How the rep should respond")
 
 
-class BattlecardAIOutput(BaseModel):
+class BattlecardAnalysis(BaseModel):
     """Schema enforced on OpenAI Structured Outputs."""
     purchase_outlook: Literal["likely", "unlikely", "undecided", "insufficient_evidence"] = "insufficient_evidence"
     confidence: Literal["low", "medium", "high"] = "low"
-    evidence_summary: str = ""
-    summary_compressed: bool = False
-    source_utf8_bytes: int = 0
-    scoring_evidence_utf8_bytes: int = 0
     overall_score: float = Field(..., ge=0.0, le=10.0, description="Final predicted lead health/closing score out of 10")
     classification: str = Field(..., description="e.g. Hot - Ready to Close, Warm - High Potential, At Risk, Cold")
     score_breakdown: ScoreBreakdown
@@ -77,9 +73,35 @@ class BattlecardAIOutput(BaseModel):
     next_best_action: str = Field(..., description="Recommended immediate next step for the sales rep")
 
 
+class UsageReport(BaseModel):
+    calls: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+
+class AnalysisMetrics(BaseModel):
+    summary_mode: Literal["direct", "rebuilt", "incremental", "reused"] = "direct"
+    summary_model: str = ""
+    scoring_model: str = ""
+    reused_interactions: int = 0
+    summary_processed_utf8_bytes: int = 0
+    summary_cache_saved: bool = True
+    summary_usage: UsageReport = Field(default_factory=UsageReport)
+    scoring_usage: UsageReport = Field(default_factory=UsageReport)
+
+
+class BattlecardAIOutput(BattlecardAnalysis):
+    """Analysis plus application-generated metadata, never requested from the LLM."""
+    evidence_summary: str = ""
+    summary_compressed: bool = False
+    source_utf8_bytes: int = 0
+    scoring_evidence_utf8_bytes: int = 0
+    analysis_metrics: Optional[AnalysisMetrics] = None
+
+
 class BattlecardResponse(BattlecardAIOutput):
     """API response model including lead metadata and timestamp."""
-    analysis_version: str = "evidence-v2"
+    analysis_version: str = "evidence-v3"
     source_fingerprint: str = ""
     cache_saved: bool = True
     lead_id: str
