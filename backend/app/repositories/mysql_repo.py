@@ -47,6 +47,29 @@ class MySQLLeadRepository(BaseLeadRepository):
             self.db.rollback()
             raise
 
+    def add_rep_action(self, lead_id: str, note: str, rep_name: str = "Sales Rep") -> Dict[str, Any]:
+        """Saves a rep action plan or talk track into rep_thread."""
+        if not self.get_lead_by_id(lead_id):
+            raise KeyError(f"Lead {lead_id} not found")
+        try:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            query = text("""
+                INSERT INTO rep_thread (lead_id, note, rep_name, created_at)
+                VALUES (:lead_id, :note, :rep_name, :created_at)
+            """)
+            self.db.execute(query, {
+                "lead_id": lead_id,
+                "note": note,
+                "rep_name": rep_name or "Sales Rep",
+                "created_at": now
+            })
+            self.db.commit()
+            return {"success": True, "lead_id": lead_id, "note": note, "created_at": now.isoformat()}
+        except Exception as e:
+            self.db.rollback()
+            logger.error("Failed to add rep action (%s)", type(e).__name__)
+            raise
+
 
     def get_lead_by_id(self, lead_id: str) -> Optional[LeadInfo]:
         """Queries the leads table for lead profile information."""

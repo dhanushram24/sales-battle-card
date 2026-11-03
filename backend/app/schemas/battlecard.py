@@ -80,7 +80,7 @@ class UsageReport(BaseModel):
 
 
 class AnalysisMetrics(BaseModel):
-    summary_mode: Literal["direct", "rebuilt", "incremental", "reused"] = "direct"
+    summary_mode: Literal["direct", "rebuilt", "incremental", "reused", "offline_heuristic"] = "direct"
     summary_model: str = ""
     scoring_model: str = ""
     reused_interactions: int = 0

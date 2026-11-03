@@ -121,90 +121,71 @@ def normalize_score_label(result):
 
 class OpenAILeadAnalyzer:
     def __init__(self, summary_store=None):
-        if not settings.OPENAI_API_KEY:
-            logger.warning("OPENAI_API_KEY is not set. OpenAI calls will fail until configured in .env.")
+        if not settings.OPENAI_API_KEY and settings.AI_PROVIDER in ("auto", "openai"):
+            logger.warning("OPENAI_API_KEY is not set. OpenAI calls will fail or fall back until configured in .env.")
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY or "dummy-key", timeout=60.0, max_retries=1)
         self.model = settings.OPENAI_MODEL
         self.summary_model = settings.OPENAI_SUMMARY_MODEL or self.model
         self.summary_store = summary_store
+        from app.services.providers.router import LLMRouter
+        self.router = LLMRouter(openai_client=self.client)
 
     def analyze_lead(self, lead: LeadInfo, interactions: List[LeadInteraction], *, use_summary: bool = True) -> BattlecardAIOutput:
         """
-        Runs OpenAI semantic analysis with structured JSON output enforcing BattlecardAIOutput schema.
+        Runs multi-provider semantic analysis (OpenAI / Gemini / Offline Heuristic)
+        enforcing BattlecardAIOutput schema.
         """
         if not settings.OPENAI_API_KEY.strip() or settings.OPENAI_API_KEY.startswith("your_"):
-            raise RuntimeError("OpenAI API key is not configured; no score was generated.")
+            if settings.AI_PROVIDER not in ("gemini", "offline") and not (settings.AI_PROVIDER == "auto" and settings.GEMINI_API_KEY):
+                raise RuntimeError("OpenAI API key is not configured; no score was generated.")
         if not any(item.content.strip() for item in interactions):
             raise ValueError("No conversation evidence available to score this lead.")
 
-        try:
-            evidence = EvidencePreparationAgent(self.client, self.summary_model, self.summary_store).prepare(
-                lead.id, interactions, settings.MAX_EVIDENCE_BYTES, use_summary=use_summary)
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error("Evidence preparation failed (%s)", type(e).__name__)
-            raise RuntimeError(analysis_error_message(e)) from e
-        transcript_text = evidence.text
-        source_bytes = evidence.source_bytes
-        compressed = evidence.compressed
-        scoring_usage = TokenUsage()
+        self.router.openai.client = self.client
+        self.router.openai.model = self.model
 
-        user_content = f"""
-LEAD PROFILE:
-- Lead ID: {lead.id}
-- Name: {lead.name}
-- Company: {lead.company}
-- Current Status: {lead.status or 'N/A'}
-- Pipeline Stage: {lead.stage or 'N/A'}
-- Assigned Rep: {lead.assigned_to or 'N/A'}
+        mode = (settings.AI_PROVIDER or "auto").lower()
 
-CONVERSATION EVIDENCE ({len(interactions)} interactions; compressed={compressed}; original indices preserved):
-{transcript_text}
+        if mode == "offline":
+            from app.services.summary import format_interactions
+            transcript_text = format_interactions(interactions)
+            source_bytes = len(transcript_text.encode("utf-8"))
+            compressed = False
+            evidence_mode = "direct"
+            reused_interactions = 0
+            processed_bytes = 0
+            summary_usage = None
+        else:
+            try:
+                evidence = EvidencePreparationAgent(self.client, self.summary_model, self.summary_store).prepare(
+                    lead.id, interactions, settings.MAX_EVIDENCE_BYTES, use_summary=use_summary)
+                transcript_text = evidence.text
+                source_bytes = evidence.source_bytes
+                compressed = evidence.compressed
+                evidence_mode = evidence.mode
+                reused_interactions = evidence.reused_interactions
+                processed_bytes = evidence.processed_bytes
+                summary_usage = evidence.usage
+            except ValueError:
+                raise
+            except Exception as e:
+                if settings.ALLOW_OFFLINE_FALLBACK:
+                    logger.warning("Evidence preparation with OpenAI failed (%s); using direct transcript for fallback.", type(e).__name__)
+                    from app.services.summary import format_interactions
+                    transcript_text = format_interactions(interactions)
+                    source_bytes = len(transcript_text.encode("utf-8"))
+                    compressed = False
+                    evidence_mode = "direct"
+                    reused_interactions = 0
+                    processed_bytes = 0
+                    summary_usage = None
+                else:
+                    logger.error("Evidence preparation failed (%s)", type(e).__name__)
+                    raise RuntimeError(analysis_error_message(e)) from e
 
-Perform deep semantic analysis with exact quote attribution, per-interaction scoring, emotional dimensions decomposition, and tactical battlecard generation following the required schema.
-"""
-
-        try:
-            completion = self.client.beta.chat.completions.parse(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format=BattlecardAnalysis,
-                max_completion_tokens=5000,
-                temperature=0.2  # Low temperature for consistent, objective scoring
-            )
-            scoring_usage.record(completion)
-            parsed = completion.choices[0].message.parsed
-            if parsed is None:
-                raise RuntimeError("OpenAI returned no valid analysis; no score was generated.")
-            result = BattlecardAIOutput(**parsed.model_dump())
-            normalize_score_label(result)
-            retained_evidence = "\n".join(json.loads(transcript_text).values()) if compressed else transcript_text
-            # Never publish invented direct quotes, including paraphrases from summaries.
-            for field in ("positive_drivers", "friction_drivers"):
-                setattr(result, field, [driver for driver in getattr(result, field)
-                    if driver.quote and driver.quote in retained_evidence and any(driver.quote in item.content for item in interactions)])
-            result.interaction_sentiments = [tag for tag in result.interaction_sentiments
-                if 1 <= tag.interaction_idx <= len(interactions) and
-                (not compressed or (tag.key_phrase and tag.key_phrase in retained_evidence and tag.key_phrase in interactions[tag.interaction_idx - 1].content))][:20]
-            for tag in result.interaction_sentiments:
-                if tag.key_phrase and tag.key_phrase not in interactions[tag.interaction_idx - 1].content:
-                    tag.key_phrase = None
-            result.evidence_summary = transcript_text if compressed else ""
-            result.summary_compressed = compressed
-            result.source_utf8_bytes = source_bytes
-            result.scoring_evidence_utf8_bytes = len(transcript_text.encode("utf-8"))
-            result.analysis_metrics = AnalysisMetrics(
-                summary_mode=evidence.mode, summary_model=self.summary_model, scoring_model=self.model,
-                reused_interactions=evidence.reused_interactions,
-                summary_processed_utf8_bytes=evidence.processed_bytes,
-                summary_cache_saved=evidence.summary_cache_saved,
-                summary_usage=evidence.usage.as_dict(), scoring_usage=scoring_usage.as_dict(),
-            )
-            return result
-        except Exception as e:
-            logger.error("OpenAI analysis failed for lead %s (%s)", lead.id, type(e).__name__)
-            raise RuntimeError(analysis_error_message(e)) from e
+        return self.router.analyze(
+            lead, interactions, transcript_text, compressed, source_bytes,
+            evidence_mode=evidence_mode, reused_interactions=reused_interactions,
+            processed_bytes=processed_bytes, summary_usage=summary_usage,
+            summary_model=self.summary_model
+        )

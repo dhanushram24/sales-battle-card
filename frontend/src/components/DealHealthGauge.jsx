@@ -1,6 +1,15 @@
 import React from 'react';
 
-export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
+const CHANNEL_META = {
+  whatsapp: { name: 'WhatsApp', icon: '💬' },
+  email: { name: 'Email', icon: '✉️' },
+  call: { name: 'Phone Call', icon: '📞' },
+  cti_event: { name: 'CTI Telephony', icon: '⚡' },
+  customer_thread: { name: 'Customer Portal', icon: '🌐' },
+  rep_note: { name: 'Rep Note', icon: '📝' },
+};
+
+export function DealHealthGauge({ battlecard, loading, error, onRetry, streamProgress }) {
   if (!battlecard || !Number.isFinite(battlecard.overall_score)) return (
     <section className="card gauge-card" aria-busy={loading}>
       <div className="card-header">
@@ -8,8 +17,11 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
       </div>
       <div className="reasoning-summary-card" role={error ? 'alert' : 'status'}>
         <p className="reasoning-text">
-          {loading ? 'Analyzing conversations. Your score will appear here when ready.' :
-            error || 'Select a lead to load its score.'}
+          {loading ? (
+            streamProgress ? (
+              <span>⚡ {streamProgress.message} ({streamProgress.percent}%)</span>
+            ) : 'Analyzing conversations. Your score will appear here when ready.'
+          ) : error || 'Select a lead to load its score.'}
         </p>
         {!loading && onRetry && (
           <button className="btn-modal-primary" onClick={onRetry}>Generate score</button>
@@ -43,9 +55,14 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
   const breakdown = battlecard.score_breakdown || {};
   const emotions = battlecard.emotional_dimensions || {};
 
-  const channelPulse = (battlecard.channel_sentiments || []).map(c => ({
-    name: c.channel, icon: '', score: c.score,
-  }));
+  const channelPulse = (battlecard.channel_sentiments || []).map(c => {
+    const meta = CHANNEL_META[c.channel] || { name: (c.channel || '').replace(/_/g, ' '), icon: '📡' };
+    return {
+      name: meta.name,
+      icon: meta.icon,
+      score: c.score,
+    };
+  });
 
   return (
     <section className="card gauge-card">
@@ -61,7 +78,11 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
         </span>
       </div>
 
-      {loading && <p className="status-banner" role="status">Refreshing analysis...</p>}
+      {loading && (
+        <p className="status-banner" role="status">
+          {streamProgress ? `⚡ ${streamProgress.message} (${streamProgress.percent}%)` : 'Refreshing analysis...'}
+        </p>
+      )}
       {error && <p className="status-banner error-banner" role="alert">{error}</p>}
       {/* Radial Gauge */}
       <div className="radial-gauge-container">
@@ -138,132 +159,40 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry }) {
       {/* Channel Sentiment Pulse */}
       <div className="channel-sentiment-section">
         <span className="mini-header-text" style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>💬</span> CHANNEL SENTIMENT PULSE
+          <span>CHANNEL SENTIMENT PULSE</span>
         </span>
-        <div className="channel-sentiment-grid">
+        <div className="channel-pills-row">
+          {!channelPulse.length && <span className="text-muted" style={{ fontSize: '11px' }}>No channel data</span>}
           {channelPulse.map((c, i) => (
-            <div key={i} className="channel-pulse-card">
-              <div className="channel-pulse-header">
-                <span className="pulse-icon">{c.icon}</span>
-                <span className="pulse-score">{c.score.toFixed(1)}</span>
-              </div>
-              <span className="pulse-name">{c.name}</span>
+            <div key={i} className="channel-pill">
+              <span className="ch-icon">{c.icon}</span>
+              <span className="ch-name">{c.name}</span>
+              <span className={`ch-score ${c.score >= 7 ? 'text-emerald' : 'text-amber'}`}>
+                {c.score?.toFixed(1) ?? 'N/A'}
+              </span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Score Decomposition */}
-      <div className="decomposition-section">
-        <div className="mini-header-title">
-          <span className="icon-sm">⚖️</span>
-          <span className="mini-header-text">SCORE DECOMPOSITION</span>
+      {/* Score Breakdown Footer */}
+      <div className="score-breakdown-row">
+        <div className="breakdown-stat">
+          <span className="b-label">Sentiment</span>
+          <strong className="b-val text-emerald">{breakdown.sentiment_score?.toFixed(1) ?? 'N/A'}</strong>
         </div>
-
-        <div className="breakdown-item">
-          <div className="breakdown-labels">
-            <span>Sentiment Polarity</span>
-            <strong className="val-text">{breakdown.sentiment_score?.toFixed(1) ?? 'N/A'} / 10</strong>
-          </div>
-          <div className="progress-track">
-            <div
-              className="progress-fill fill-blue"
-              style={{ width: `${(breakdown.sentiment_score ?? 0) * 10}%` }}
-            ></div>
-          </div>
+        <div className="breakdown-stat">
+          <span className="b-label">Engagement</span>
+          <strong className="b-val text-cyan">{breakdown.engagement_score?.toFixed(1) ?? 'N/A'}</strong>
         </div>
-
-        <div className="breakdown-item">
-          <div className="breakdown-labels">
-            <span>Engagement & Velocity</span>
-            <strong className="val-text">{breakdown.engagement_score?.toFixed(1) ?? 'N/A'} / 10</strong>
-          </div>
-          <div className="progress-track">
-            <div
-              className="progress-fill fill-magenta"
-              style={{ width: `${(breakdown.engagement_score ?? 0) * 10}%` }}
-            ></div>
-          </div>
+        <div className="breakdown-stat">
+          <span className="b-label">Intent</span>
+          <strong className="b-val text-emerald">{breakdown.intent_score?.toFixed(1) ?? 'N/A'}</strong>
         </div>
-
-        <div className="breakdown-item">
-          <div className="breakdown-labels">
-            <span>Buyer Urgency & Intent</span>
-            <strong className="val-text">{breakdown.intent_score?.toFixed(1) ?? 'N/A'} / 10</strong>
-          </div>
-          <div className="progress-track">
-            <div
-              className="progress-fill fill-emerald"
-              style={{ width: `${(breakdown.intent_score ?? 0) * 10}%` }}
-            ></div>
-          </div>
+        <div className="breakdown-stat">
+          <span className="b-label">Risk Penalty</span>
+          <strong className="b-val text-rose">-{breakdown.risk_penalty?.toFixed(1) ?? 'N/A'}</strong>
         </div>
-
-        <div className="breakdown-item">
-          <div className="breakdown-labels">
-            <span>Deal Friction / Penalty</span>
-            <strong className="val-risk">-{breakdown.risk_penalty?.toFixed(1) ?? 'N/A'}</strong>
-          </div>
-          <div className="progress-track">
-            <div
-              className="progress-fill fill-risk"
-              style={{ width: `${((breakdown.risk_penalty ?? 0) / 5) * 100}%` }}
-            ></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Semantic Reasoning Summary */}
-      <div className="reasoning-summary-card">
-        <div className="reasoning-header">
-          <span className="bulb-icon">💡</span>
-          <span className="reasoning-title">Semantic Reasoning Summary</span>
-        </div>
-        <p className="reasoning-text">
-          Purchase outlook: {battlecard.purchase_outlook?.replaceAll('_', ' ') || 'Unknown'}
-          {' | '}Confidence: {battlecard.confidence || 'Unknown'}
-        </p>
-        <p className="reasoning-text">
-          {battlecard.sentiment_summary ||
-            "No reasoning summary available."}
-        </p>
-        {battlecard.evidence_summary && (
-          <details>
-            <summary>Buying evidence summary</summary>
-            <p className="reasoning-text" style={{ whiteSpace: 'pre-wrap' }}>
-              {(() => {
-                try { return Object.entries(JSON.parse(battlecard.evidence_summary))
-                  .map(([key, value]) => `${key.replaceAll('_', ' ')}: ${value}`).join('\n\n'); }
-                catch { return battlecard.evidence_summary; }
-              })()}
-            </p>
-          </details>
-        )}
-        {battlecard.analysis_metrics && (
-          <details style={{ marginTop: '12px' }}>
-            <summary>Analysis usage</summary>
-            <p className="reasoning-text">
-              Summary: {({ direct: 'not needed for this short history', rebuilt: 'built from the current history', incremental: 'updated with new conversations', reused: 'reused without a new summary call' })[battlecard.analysis_metrics.summary_mode]}.
-              {' '}Previously summarized interactions reused: {battlecard.analysis_metrics.reused_interactions}.
-            </p>
-            <p className="reasoning-text">
-              Scoring evidence: {battlecard.scoring_evidence_utf8_bytes?.toLocaleString()} bytes
-              {' '}(original history: {battlecard.source_utf8_bytes?.toLocaleString()} bytes). Byte counts exclude prompts and are not token counts.
-            </p>
-            {['summary_usage', 'scoring_usage'].map(stage => {
-              const usage = battlecard.analysis_metrics[stage];
-              return usage && <p className="reasoning-text" key={stage}>
-                {stage === 'summary_usage' ? 'Summarization' : 'Scoring'}: {usage.calls} completed API calls;
-                {' '}input tokens: {usage.input_tokens?.toLocaleString() ?? 'not reported'};
-                {' '}output tokens: {usage.output_tokens?.toLocaleString() ?? 'not reported'}.
-              </p>;
-            })}
-            <p className="reasoning-text">Usage is for the generation of this saved score. Initial summarization can add cost.</p>
-            {!battlecard.analysis_metrics.summary_cache_saved && (
-              <p className="reasoning-text" role="alert">The evidence summary was not saved. Future analysis may need to summarize the history again.</p>
-            )}
-          </details>
-        )}
       </div>
     </section>
   );

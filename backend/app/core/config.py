@@ -53,10 +53,14 @@ class Settings(BaseModel):
     COL_INT_DIRECTION: str = Field(default_factory=lambda: os.getenv("COL_INT_DIRECTION", "direction"))
     COL_INT_CREATED_AT: str = Field(default_factory=lambda: os.getenv("COL_INT_CREATED_AT", "created_at"))
 
-    # OpenAI
+    # AI Provider Settings
+    AI_PROVIDER: str = Field(default_factory=lambda: os.getenv("AI_PROVIDER", "auto"))
     OPENAI_API_KEY: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     OPENAI_MODEL: str = Field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
     OPENAI_SUMMARY_MODEL: str = Field(default_factory=lambda: os.getenv("OPENAI_SUMMARY_MODEL", ""))
+    GEMINI_API_KEY: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    GEMINI_MODEL: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
+    ALLOW_OFFLINE_FALLBACK: bool = Field(default_factory=lambda: os.getenv("ALLOW_OFFLINE_FALLBACK", "false").lower() in ("true", "1", "yes"))
 
     @property
     def database_url(self) -> URL:

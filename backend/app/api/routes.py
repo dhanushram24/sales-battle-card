@@ -1,6 +1,9 @@
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+import json
+from typing import Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -32,10 +35,13 @@ def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         error_msg = "Database connection failed. Check backend configuration."
 
+    from app.services.providers.router import LLMRouter
+    ai_status = LLMRouter().get_status()
     return {
         "status": "healthy" if db_connected else "degraded",
         "database_connected": db_connected,
-        "database_error": error_msg
+        "database_error": error_msg,
+        "ai_engine": ai_status
     }
 
 
@@ -150,3 +156,59 @@ def update_lead(lead_id: str, changes: LeadUpdate, db: Session = Depends(get_db)
         return MySQLLeadRepository(db).update_lead(lead_id, changes)
     except KeyError as e:
         raise HTTPException(status_code=404, detail="Lead not found.") from e
+
+
+@router.post("/leads/{lead_id}/actions")
+def log_rep_action(lead_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """Logs a tactical talk track or action plan directly into CRM rep_thread."""
+    note = (payload.get("note") or payload.get("content") or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="Action note cannot be empty.")
+    repo = MySQLLeadRepository(db)
+    try:
+        lead = repo.get_lead_by_id(lead_id)
+        if not lead:
+            raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found.")
+        rep_name = lead.assigned_to or "Sales Rep"
+        return repo.add_rep_action(lead_id, note, rep_name=rep_name)
+    except HTTPException:
+        raise
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="Lead not found.") from e
+    except Exception as e:
+        logger.error("Failed to record rep action: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to save action plan to CRM.") from e
+
+
+@router.get("/leads/{lead_id}/sync-stream")
+async def sync_battlecard_stream(lead_id: str, db: Session = Depends(get_db)):
+    """
+    Streams Server-Sent Events (SSE) detailing the step-by-step progress
+    of omnichannel gathering, memory preparation, and multi-provider AI scoring.
+    """
+    repo = MySQLLeadRepository(db)
+    lead = repo.get_lead_by_id(lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Lead {lead_id} not found.")
+
+    async def event_generator():
+        import asyncio
+        try:
+            yield f"event: progress\ndata: {json.dumps({'step': 'extracting', 'message': 'Gathering interactions across WhatsApp, CTI call logs, emails...', 'percent': 25})}\n\n"
+            await asyncio.sleep(0.2)
+            interactions = repo.get_lead_interactions(lead_id)
+
+            yield f"event: progress\ndata: {json.dumps({'step': 'preparing', 'message': f'Aggregated {len(interactions)} omnichannel interactions. Validating evidence memory...', 'percent': 50})}\n\n"
+            await asyncio.sleep(0.2)
+
+            yield f"event: progress\ndata: {json.dumps({'step': 'analyzing', 'message': 'Running multi-provider AI engine for deal health, objections & competitor radar...', 'percent': 75})}\n\n"
+            await asyncio.sleep(0.2)
+            service = BattlecardService(repo=repo)
+            battlecard = service.get_battlecard(lead_id=lead_id, force_refresh=True, allow_analysis=True)
+
+            yield f"event: complete\ndata: {battlecard.model_dump_json()}\n\n"
+        except Exception as e:
+            logger.error("Streaming analysis failed for lead %s: %s", lead_id, e)
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
