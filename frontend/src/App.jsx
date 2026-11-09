@@ -8,6 +8,7 @@ import { RepActionCoPilot } from './components/RepActionCoPilot';
 import { RightUtilityPanel } from './components/RightUtilityPanel';
 import { SentimentDrivers } from './components/SentimentDrivers';
 import { OmnichannelTimeline } from './components/OmnichannelTimeline';
+import { DealSimulator } from './components/DealSimulator';
 import { ProposalModal, CompanyProfileModal, EditLeadModal, SpotlightSearchModal } from './components/Modals';
 import { apiRequest, loadAllLeads } from './api';
 import { useLeadData } from './useLeadData';
@@ -20,6 +21,27 @@ function LeadWorkspace({ id, activeTab, leads, onSelectLead, onLeadSaved, onBusy
   const [saving, setSaving] = useState(false);
   const [leadSearch, setLeadSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
+  const [portfolioRadar, setPortfolioRadar] = useState(null);
+  const [accountsList, setAccountsList] = useState([]);
+  const [selectedAccountCompany, setSelectedAccountCompany] = useState('');
+
+  useEffect(() => {
+    if (activeTab === 'leads') {
+      apiRequest('/portfolio/radar')
+        .then(res => setPortfolioRadar(res))
+        .catch(() => {});
+    }
+    if (activeTab === 'accounts') {
+      apiRequest('/accounts')
+        .then(res => {
+          setAccountsList(res || []);
+          if (res?.length && !selectedAccountCompany) {
+            setSelectedAccountCompany(res[0].company_name);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [activeTab, selectedAccountCompany]);
 
   const filteredLeads = leads.filter(item => {
     const term = leadSearch.toLowerCase().trim();
@@ -79,13 +101,20 @@ function LeadWorkspace({ id, activeTab, leads, onSelectLead, onLeadSaved, onBusy
         onCopyLeadId={copy} onGenerateProposal={() => setModal('proposal')} onSync={() => data.sync()} />
       <div className="intelligence-quad-grid">
         {score}{competitors}
-        <RepActionCoPilot nextAction={battlecard?.next_best_action} talkTracks={battlecard?.recommended_talk_tracks || []} onCopy={copy} />
+        <RepActionCoPilot
+          nextAction={battlecard?.next_best_action}
+          talkTracks={battlecard?.recommended_talk_tracks || []}
+          onCopy={copy}
+          onGetReengagement={data.getReengagementPackage}
+          onLogAction={data.addActionPlan}
+        />
         <RightUtilityPanel lead={lead} interactions={interactions} busy={saving || scoreLoading}
           onGenerateProposal={() => setModal('proposal')} onAddToPipeline={moveToNegotiation}
           onViewCompanyProfile={() => setModal('company')}
           onShareLead={() => copy(`${window.location.origin}/?lead=${encodeURIComponent(id)}`, 'Lead link copied.')}
           onViewAllTimeline={() => document.getElementById('omnichannel-timeline-section')?.scrollIntoView({ behavior: 'smooth' })} />
       </div>
+      <DealSimulator battlecard={battlecard} onSimulate={data.simulateScenario} onLogAction={data.addActionPlan} onCopy={copy} />
       {drivers}
       <div id="omnichannel-timeline-section"><OmnichannelTimeline interactions={interactions} interactionSentiments={battlecard?.interaction_sentiments || []} /></div>
     </>}
@@ -106,6 +135,42 @@ function LeadWorkspace({ id, activeTab, leads, onSelectLead, onLeadSaved, onBusy
         </div>
       </div>
 
+      {portfolioRadar && (
+        <div className="portfolio-radar-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', margin: '14px 0 18px' }}>
+          <div className="portfolio-kpi-card" style={{ padding: '12px', background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Portfolio Avg Health</span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--emerald)', marginTop: '4px' }}>
+              {portfolioRadar.average_health_score.toFixed(1)}/10
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Across {portfolioRadar.total_leads} active CRM deals</span>
+          </div>
+
+          <div className="portfolio-kpi-card" style={{ padding: '12px', background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Healthy / Ready to Close</span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--emerald)', marginTop: '4px' }}>
+              🔥 {portfolioRadar.healthy_deals_count} Deals
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Score ≥ 7.5 High intent</span>
+          </div>
+
+          <div className="portfolio-kpi-card" style={{ padding: '12px', background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Slippage Risk Detected</span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: portfolioRadar.at_risk_deals_count > 0 ? 'var(--rose)' : 'var(--emerald)', marginTop: '4px' }}>
+              ⚠️ {portfolioRadar.at_risk_deals_count} Deals
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>High friction or price blocker</span>
+          </div>
+
+          <div className="portfolio-kpi-card" style={{ padding: '12px', background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Stalled Momentum</span>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: portfolioRadar.stalled_deals_count > 0 ? 'var(--amber)' : 'var(--text-muted)', marginTop: '4px' }}>
+              ⏳ {portfolioRadar.stalled_deals_count} Deals
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Inactive &gt;14 calendar days</span>
+          </div>
+        </div>
+      )}
+
       <div className="pipeline-filters-bar">
         {['ALL', ...Array.from(new Set(leads.map(l => l.stage).filter(Boolean)))].map(stage => (
           <button
@@ -124,7 +189,12 @@ function LeadWorkspace({ id, activeTab, leads, onSelectLead, onLeadSaved, onBusy
         <td><strong className="lead-id-tag">#{item.id}</strong></td>
         <td>{item.name || 'Not recorded'}</td>
         <td>{item.company || 'Not recorded'}</td>
-        <td><span className="stage-pill">{item.stage || 'Not recorded'}</span></td>
+        <td>
+          <span className="stage-pill">{item.stage || 'Not recorded'}</span>
+          {portfolioRadar?.leads?.find(p => p.lead_id === item.id)?.slippage_risk && (
+            <span className="severity-pill-amber" style={{ fontSize: '10px', marginLeft: '6px' }}>⚠️ Slippage Risk</span>
+          )}
+        </td>
         <td>{item.assigned_to || 'Unassigned'}</td>
         <td><button className="btn-select-lead-sm" onClick={() => onSelectLead(item.id)}>Open lead</button></td>
       </tr>)}</tbody></table></div>
@@ -175,7 +245,8 @@ function LeadWorkspace({ id, activeTab, leads, onSelectLead, onLeadSaved, onBusy
       )}
     </section>}
     {activeTab === 'battlecard' && competitors}
-    {activeTab === 'insights' && <><p className="status-banner">{interactions.length} recorded interactions. {battlecard ? `${battlecard.analyzed_interactions_count} interactions analyzed.` : 'Generate a score to see evidence-based insights.'}</p>{score}{drivers}</>}
+    {activeTab === 'insights' && <><p className="status-banner">{interactions.length} recorded interactions. {battlecard ? `${battlecard.analyzed_interactions_count} interactions analyzed.` : 'Generate a score to see evidence-based insights.'}</p>{score}<DealSimulator battlecard={battlecard} onSimulate={data.simulateScenario} onLogAction={data.addActionPlan} onCopy={copy} />
+      {drivers}</>}
     {activeTab === 'reports' && <section className="card tab-pane-card report-briefing-card">
       <div className="report-briefing-header">
         <div>

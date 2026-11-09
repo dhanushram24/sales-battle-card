@@ -48,6 +48,118 @@ class ObjectionDetail(BaseModel):
     recommended_handling: str = Field(..., description="How the rep should respond")
 
 
+
+class MomentumMetrics(BaseModel):
+    """Phase 3: Temporal sentiment decay and momentum velocity (dS/dt)."""
+    velocity_score: float = Field(0.0, description="Rate of sentiment shift over time (-5.0 to +5.0 per week)")
+    momentum_direction: str = Field("neutral", description="'accelerating', 'steady', 'decelerating', 'stalled'")
+    stall_risk_level: str = Field("Low", description="'Low', 'Moderate', 'High', 'Critical (Ghosting)'")
+    days_since_last_customer_touch: int = Field(0, description="Calendar days since last inbound customer interaction")
+    decay_weighted_score: float = Field(5.0, description="Recency-decay-weighted health score")
+
+
+class StakeholderProfile(BaseModel):
+    """Phase 3: Individual decision maker and committee mapping."""
+    role: str = Field(..., description="'Champion', 'Economic Buyer', 'Technical Evaluator', 'Blocker', 'General Contact'")
+    name: Optional[str] = None
+    sentiment: float = Field(..., ge=0.0, le=10.0)
+    stance: str = Field("neutral", description="'Supporter', 'Skeptic', 'Evaluating', 'Sign-Off Ready'")
+    key_concerns: List[str] = Field(default_factory=list)
+
+
+class CommitteeConsensus(BaseModel):
+    """Phase 3: Multi-stakeholder consensus index across the buying organization."""
+    consensus_index: float = Field(..., ge=0.0, le=10.0, description="Consensus score across stakeholders (0-10)")
+    has_economic_buyer_alignment: bool = Field(True, description="Whether CFO/VP has directly engaged")
+    stakeholders: List[StakeholderProfile] = Field(default_factory=list)
+
+
+class DealSimulationRequest(BaseModel):
+    """Phase 3: What-If deal scenario simulation input."""
+    discount_percent: float = Field(default=0.0, ge=0.0, le=50.0, description="Hypothetical licensing discount percentage (0-50%)")
+    waive_setup_fees: bool = Field(default=False, description="Whether CTI/setup connector fees are waived")
+    guarantee_sla: bool = Field(default=False, description="Whether committed 99.9% uptime SLA is included")
+    shorten_onboarding_days: int = Field(default=0, ge=0, le=60, description="Accelerated onboarding sprint days")
+    custom_concession: Optional[str] = Field(default=None, description="Optional custom commercial concession")
+
+
+class DealSimulationResponse(BaseModel):
+    """Phase 3: What-If deal scenario simulation output."""
+    lead_id: str
+    base_score: float
+    simulated_score: float
+    score_delta: float
+    simulated_outlook: str
+    projected_buyer_reaction: str
+    closing_pitch_script: str
+    recommended_closing_tactic: str
+
+
+class CallIntelligence(BaseModel):
+    """Phase 3: Telephony speech diarization and acoustic intent analysis."""
+    talk_ratio_rep: float = Field(..., ge=0.0, le=100.0, description="Percentage of conversation spoken by sales rep")
+    talk_ratio_customer: float = Field(..., ge=0.0, le=100.0, description="Percentage spoken by customer")
+    patience_score: float = Field(..., ge=0.0, le=10.0, description="Rep patience score; penalizes interruptions (0-10)")
+    hesitation_detected: bool = Field(False, description="Whether buyer exhibited hesitation markers during pricing/SLA discussion")
+    speech_summary: str = Field(..., description="Summary of call dynamics and verbal engagement")
+
+
+class PortfolioLeadSummary(BaseModel):
+    lead_id: str
+    name: str
+    company: str
+    stage: str
+    score: float
+    classification: str
+    momentum: str
+    slippage_risk: bool
+
+
+class PortfolioRadarResponse(BaseModel):
+    """Phase 3: Pipeline portfolio risk and slippage radar metrics."""
+    total_leads: int
+    average_health_score: float
+    healthy_deals_count: int
+    at_risk_deals_count: int
+    stalled_deals_count: int
+    leads: List[PortfolioLeadSummary] = Field(default_factory=list)
+
+
+class ReengagementPackage(BaseModel):
+    """Phase 4: Autonomous deal intervention and recovery package."""
+    lead_id: str
+    recipient_name: str
+    recipient_company: str
+    urgency_level: str
+    intervention_headline: str
+    email_subject: str
+    email_body: str
+    executive_call_agenda: List[str] = Field(default_factory=list)
+    recommended_concession: str
+
+
+class AccountContactSummary(BaseModel):
+    lead_id: str
+    name: str
+    role: str
+    stage: str
+    status: str
+    assigned_to: str
+    score: float
+
+
+class AccountDossier(BaseModel):
+    """Phase 4: Multi-contact enterprise account collective intelligence."""
+    company_name: str
+    total_contacts: int
+    collective_health_score: float
+    account_classification: str
+    primary_competitor: Optional[str] = None
+    active_objections: List[str] = Field(default_factory=list)
+    contacts: List[AccountContactSummary] = Field(default_factory=list)
+    account_risk_summary: str
+
+
 class BattlecardAnalysis(BaseModel):
     """Schema enforced on OpenAI Structured Outputs."""
     purchase_outlook: Literal["likely", "unlikely", "undecided", "insufficient_evidence"] = "insufficient_evidence"
@@ -71,6 +183,11 @@ class BattlecardAnalysis(BaseModel):
     competitors: List[CompetitorInsight] = Field(default_factory=list, description="Competitors identified and battlecard counters")
     recommended_talk_tracks: List[str] = Field(default_factory=list, description="Suggested talking points for the next interaction")
     next_best_action: str = Field(..., description="Recommended immediate next step for the sales rep")
+
+    # Phase 3 Advanced Semantic Intelligence
+    momentum: Optional[MomentumMetrics] = None
+    committee: Optional[CommitteeConsensus] = None
+    call_intelligence: Optional[CallIntelligence] = None
 
 
 class UsageReport(BaseModel):

@@ -54,9 +54,13 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry, streamPro
 
   const breakdown = battlecard.score_breakdown || {};
   const emotions = battlecard.emotional_dimensions || {};
+  const momentum = battlecard.momentum;
+  const committee = battlecard.committee;
+  const callIntel = battlecard.call_intelligence;
 
   const channelPulse = (battlecard.channel_sentiments || []).map(c => {
-    const meta = CHANNEL_META[c.channel] || { name: (c.channel || '').replace(/_/g, ' '), icon: '📡' };
+    const raw = String(c.channel || '').trim();
+    const meta = CHANNEL_META[raw.toLowerCase()] || { name: raw.replace(/_/g, ' '), icon: '📡' };
     return {
       name: meta.name,
       icon: meta.icon,
@@ -120,6 +124,22 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry, streamPro
         </span>
       </div>
 
+      {/* Phase 3: Temporal Momentum & Velocity Pill */}
+      {momentum && (
+        <div className="momentum-banner-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '6px 0 12px', padding: '6px 12px', background: 'rgba(255,255,255,0.025)', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '11.5px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>{momentum.momentum_direction === 'accelerating' ? '🚀' : (momentum.momentum_direction === 'stalled' ? '⚠️' : '⚡')}</span>
+            <strong style={{ textTransform: 'capitalize' }}>Momentum: {momentum.momentum_direction}</strong>
+            <span className={momentum.velocity_score >= 0 ? 'text-emerald' : 'text-rose'}>
+              ({momentum.velocity_score >= 0 ? '+' : ''}{momentum.velocity_score.toFixed(1)}/wk)
+            </span>
+          </span>
+          <span className="text-muted" style={{ fontSize: '11px' }}>
+            Last touch: {momentum.days_since_last_customer_touch}d ago · Risk: <strong className={momentum.stall_risk_level.includes('High') || momentum.stall_risk_level.includes('Critical') ? 'text-rose' : 'text-emerald'}>{momentum.stall_risk_level}</strong>
+          </span>
+        </div>
+      )}
+
       {/* Emotional & Commercial Stance */}
       <div className="emotional-dimensions-card">
         <div className="emotional-header">
@@ -155,6 +175,56 @@ export function DealHealthGauge({ battlecard, loading, error, onRetry, streamPro
           </div>
         </div>
       </div>
+
+      {/* Phase 3: Buying Committee Consensus Breakdown */}
+      {committee && committee.stakeholders && committee.stakeholders.length > 0 && (
+        <div className="committee-section" style={{ marginTop: '14px', padding: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span className="mini-header-text">BUYING COMMITTEE CONSENSUS</span>
+            <span className="stance-badge-amber" style={{ fontSize: '10px' }}>
+              {committee.consensus_index.toFixed(1)}/10 Index
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+            {committee.stakeholders.map((s, idx) => (
+              <div key={idx} style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid var(--border-subtle)', fontSize: '11px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.role}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', color: 'var(--text-muted)' }}>
+                  <span>{s.stance}</span>
+                  <strong className={s.sentiment >= 7 ? 'text-emerald' : 'text-amber'}>{s.sentiment.toFixed(1)}/10</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Phase 3: Telephony Speech & Diarization Intelligence */}
+      {callIntel && (
+        <div className="speech-intelligence-card" style={{ marginTop: '14px', padding: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span className="mini-header-text">📞 TELEPHONY SPEECH & TALK RATIO</span>
+            <span className="stance-badge-amber" style={{ fontSize: '10px' }}>
+              Patience: {callIntel.patience_score.toFixed(1)}/10
+            </span>
+          </div>
+
+          <div style={{ marginBottom: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+              <span>Sales Rep: <strong>{callIntel.talk_ratio_rep}%</strong></span>
+              <span>Buyer: <strong>{callIntel.talk_ratio_customer}%</strong></span>
+            </div>
+            <div className="progress-track" style={{ height: '6px', display: 'flex', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ width: `${callIntel.talk_ratio_rep}%`, background: '#6366f1' }} title={`Rep: ${callIntel.talk_ratio_rep}%`}></div>
+              <div style={{ width: `${callIntel.talk_ratio_customer}%`, background: '#10b981' }} title={`Customer: ${callIntel.talk_ratio_customer}%`}></div>
+            </div>
+          </div>
+
+          <p style={{ margin: '6px 0 0', fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            {callIntel.speech_summary}
+          </p>
+        </div>
+      )}
 
       {/* Channel Sentiment Pulse */}
       <div className="channel-sentiment-section">

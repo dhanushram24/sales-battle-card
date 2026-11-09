@@ -16,7 +16,8 @@ def seed():
     leads_data = [
         ('124', 'Priya Patel', 'Zenith Tech Solutions', 'In Progress', 'Negotiation', 'Pooja Rep'),
         ('125', 'Amit Verma', 'CloudScale Systems', 'Evaluating', 'Discovery', 'Kavita Rep'),
-        ('126', 'Vikrant Kapoor', 'Metro Logistics Corp', 'At Risk', 'Progress', 'Arun Rep')
+        ('126', 'Vikrant Kapoor', 'Metro Logistics Corp', 'At Risk', 'Progress', 'Arun Rep'),
+        ('127', 'Suresh Menon', 'Apex Enterprise Solutions', 'In Progress', 'Proposal Under Review', 'Vikram rep')
     ]
 
     for lid, name, comp, stat, stg, rep in leads_data:
@@ -53,6 +54,13 @@ def seed():
         db.execute(text('INSERT INTO pm1call_log (lead_id, call_type, duration, call_remarks, created_at) VALUES ("126", "Outbound", 240, "Call with Vikrant. Major pushback on upfront cost. Considering Freshsales as lower-cost alternative.", :dt)'), {'dt': now - timedelta(days=1)})
         db.execute(text('INSERT INTO rep_thread (lead_id, note, rep_name, created_at) VALUES ("126", "Needs manager approval for quarterly milestone billing to avoid losing deal.", "Arun Rep", :dt)'), {'dt': now - timedelta(hours=4)})
         print('Seeded interactions for Lead 126')
+
+    # Lead 127: CTO at Apex Enterprise Solutions (Multi-contact Account)
+    if not db.execute(text('SELECT id FROM ticket_email WHERE lead_id = "127"')).first():
+        db.execute(text('INSERT INTO ticket_email (lead_id, subject, email_body, direction, created_at) VALUES ("127", "Technical Security Review", "Completed technical security audit for 35 user deployment at Apex. Telephony latency and data encryption approved.", "inbound", :dt)'), {'dt': now - timedelta(days=3)})
+        db.execute(text('INSERT INTO whats_app (lead_id, message, sender_type, created_at) VALUES ("127", "Suresh here. Security compliance review passed. Rajesh Sharma has our technical greenlight for commercial signoff.", "customer", :dt)'), {'dt': now - timedelta(days=1)})
+        db.execute(text('INSERT INTO rep_thread (lead_id, note, rep_name, created_at) VALUES ("127", "Technical signoff secured from Suresh Menon (CTO). Aligning with Rajesh Sharma VP of Sales for final PO execution.", "Vikram rep", :dt)'), {'dt': now - timedelta(hours=8)})
+        print('Seeded interactions for Lead 127')
 
     db.commit()
     all_leads = db.execute(text('SELECT id, name, company, stage, status, assigned_to FROM leads')).fetchall()

@@ -166,11 +166,38 @@ export function useLeadData(id) {
     }
   }
 
+  async function simulateScenario(params) {
+    const request = gate.begin();
+    try {
+      return await apiRequest(`${path}/simulate`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+        signal: request.signal
+      });
+    } catch (error) {
+      if (request.isCurrent()) throw error;
+      return null;
+    }
+  }
+
+  async function getReengagementPackage() {
+    const request = gate.begin();
+    try {
+      return await apiRequest(`${path}/reengage`, {
+        method: 'POST',
+        signal: request.signal
+      });
+    } catch (error) {
+      if (request.isCurrent()) throw error;
+      return null;
+    }
+  }
+
   const reload = useCallback(() => load(false), [load]);
   const sync = useCallback(() => {
     setData(previous => ({ ...previous, scoreLoading: true, streamProgress: { step: 'starting', message: 'Connecting to CRM & AI engine...', percent: 10 }, scoreError: '' }));
     return load(true);
   }, [load]);
 
-  return { ...data, reload, sync, save, addActionPlan };
+  return { ...data, reload, sync, save, addActionPlan, simulateScenario, getReengagementPackage };
 }

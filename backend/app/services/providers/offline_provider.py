@@ -5,9 +5,11 @@ from app.schemas.lead import LeadInfo, LeadInteraction
 from app.schemas.battlecard import (
     BattlecardAIOutput, ScoreBreakdown, EmotionalDimensions,
     ChannelSentiment, SentimentDriver, InteractionSentimentTag,
-    CompetitorInsight, ObjectionDetail, AnalysisMetrics, UsageReport
+    CompetitorInsight, ObjectionDetail, AnalysisMetrics, UsageReport,
+    MomentumMetrics, CommitteeConsensus, StakeholderProfile, CallIntelligence
 )
 from app.services.providers.base import BaseLLMProvider
+from app.services.speech_intelligence import analyze_call_intelligence
 
 
 KNOWN_COMPETITORS = {
@@ -281,6 +283,92 @@ class OfflineHeuristicProvider(BaseLLMProvider):
         else:
             dynamic_next_action = f"Follow up with {lead.name or 'the prospect'} at {lead.company or 'the organization'} to clarify timeline and evaluation criteria."
 
+        # Phase 3: Temporal Sentiment Velocity & Stall Detection (dS/dt)
+        now_dt = datetime.now(timezone.utc)
+        inbound_times = [
+            i.created_at for i in interactions 
+            if i.created_at and (i.direction or "").lower() == "inbound"
+        ]
+        days_since_touch = 0
+        if inbound_times:
+            latest_touch = max(inbound_times)
+            if latest_touch.tzinfo is None:
+                latest_touch = latest_touch.replace(tzinfo=timezone.utc)
+            days_since_touch = max(0, (now_dt - latest_touch).days)
+        
+        # Calculate velocity: compare second half of tags vs first half
+        if len(interaction_tags) >= 2:
+            mid = len(interaction_tags) // 2
+            first_half_avg = sum(t.score for t in interaction_tags[:mid]) / max(1, mid)
+            second_half_avg = sum(t.score for t in interaction_tags[mid:]) / max(1, len(interaction_tags) - mid)
+            raw_velocity = round((second_half_avg - first_half_avg) * 1.8, 1)
+        else:
+            raw_velocity = 0.0
+
+        velocity = max(-5.0, min(5.0, raw_velocity))
+
+        if days_since_touch > 14:
+            direction = "stalled"
+            stall_risk = "Critical (Ghosting)"
+        elif velocity > 0.6:
+            direction = "accelerating"
+            stall_risk = "Low"
+        elif velocity < -0.6:
+            direction = "decelerating"
+            stall_risk = "High" if days_since_touch > 5 else "Moderate"
+        else:
+            direction = "steady"
+            stall_risk = "Moderate" if days_since_touch > 7 else "Low"
+
+        # Half-life decay recency score
+        decay_score = round(max(1.0, min(10.0, overall_score + (velocity * 0.25) - (days_since_touch * 0.05))), 1)
+
+        momentum = MomentumMetrics(
+            velocity_score=velocity,
+            momentum_direction=direction,
+            stall_risk_level=stall_risk,
+            days_since_last_customer_touch=days_since_touch,
+            decay_weighted_score=decay_score
+        )
+
+        # Phase 3: Multi-Stakeholder Committee Mapping
+        stakeholders: List[StakeholderProfile] = []
+        stakeholders.append(StakeholderProfile(
+            role="Primary Champion",
+            name=lead.name or "Primary Contact",
+            sentiment=round(min(10.0, max(2.0, base_sentiment)), 1),
+            stance="Sign-Off Ready" if overall_score >= 8.0 else ("Supporter" if positive_count >= friction_count else "Evaluating"),
+            key_concerns=[o.objection for o in detected_objections[:2]]
+        ))
+
+        all_text = " ".join((i.content or "") for i in interactions).lower()
+        has_economic_buyer = False
+        if any(w in all_text for w in ["vp", "cfo", "director", "leadership", "executive", "budget approved"]):
+            has_economic_buyer = True
+            stakeholders.append(StakeholderProfile(
+                role="Economic Buyer (VP / Finance)",
+                name="Executive Sponsor",
+                sentiment=round(min(10.0, max(2.0, 7.0 + (positive_count * 0.4) - (friction_count * 0.5))), 1),
+                stance="Supporter" if overall_score >= 7.0 else "Skeptic",
+                key_concerns=["Budget justification", "Annual contract TCO"] if friction_count > 0 else ["Licensing scope"]
+            ))
+
+        if any(w in all_text for w in ["cti", "telephony", "integration", "sla", "uptime", "api", "security"]):
+            stakeholders.append(StakeholderProfile(
+                role="Technical Evaluator (IT / Telephony)",
+                name="Solutions Lead",
+                sentiment=round(min(10.0, max(3.0, 6.5 + (1.0 if "impressed" in all_text else 0.0) - (1.0 if "sla" in all_text else 0.0))), 1),
+                stance="Evaluating" if "sla" in all_text else "Supporter",
+                key_concerns=["Carrier uptime SLA", "Telephony gateway integration"]
+            ))
+
+        consensus_val = round(sum(s.sentiment for s in stakeholders) / len(stakeholders), 1)
+        committee = CommitteeConsensus(
+            consensus_index=consensus_val,
+            has_economic_buyer_alignment=has_economic_buyer,
+            stakeholders=stakeholders
+        )
+
         return BattlecardAIOutput(
             purchase_outlook=outlook,
             confidence=confidence,
@@ -308,6 +396,9 @@ class OfflineHeuristicProvider(BaseLLMProvider):
             competitors=detected_competitors,
             recommended_talk_tracks=dynamic_talk_tracks,
             next_best_action=dynamic_next_action,
+            momentum=momentum,
+            committee=committee,
+            call_intelligence=analyze_call_intelligence(interactions),
             evidence_summary="",
             summary_compressed=compressed,
             source_utf8_bytes=source_bytes,

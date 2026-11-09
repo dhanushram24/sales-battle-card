@@ -106,6 +106,86 @@ class MultiProviderTests(unittest.TestCase):
         resp = client.post("/api/leads/123/actions", json={"note": ""})
         self.assertEqual(resp.status_code, 400)
 
+    def test_phase3_momentum_and_committee_metrics(self):
+        provider = OfflineHeuristicProvider()
+        result = provider.analyze(
+            self.lead,
+            self.interactions,
+            transcript_text="test transcript",
+            compressed=False,
+            source_bytes=200
+        )
+        self.assertIsNotNone(result.momentum)
+        self.assertIn(result.momentum.momentum_direction, ("accelerating", "steady", "decelerating", "stalled"))
+        self.assertGreaterEqual(result.momentum.decay_weighted_score, 1.0)
+        self.assertIsNotNone(result.committee)
+        self.assertGreaterEqual(result.committee.consensus_index, 1.0)
+        self.assertTrue(len(result.committee.stakeholders) > 0)
+
+    def test_deal_simulation_endpoint(self):
+        client = TestClient(app)
+        resp = client.post("/api/leads/123/simulate", json={
+            "discount_percent": 15.0,
+            "waive_setup_fees": True,
+            "guarantee_sla": True,
+            "shorten_onboarding_days": 21
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertGreater(data["simulated_score"], data["base_score"])
+        self.assertGreater(data["score_delta"], 0)
+        self.assertIn("15.0% licensing discount", data["closing_pitch_script"])
+        self.assertIn("waived CTI telephony gateway", data["closing_pitch_script"])
+
+    def test_call_intelligence_extraction(self):
+        from app.services.speech_intelligence import analyze_call_intelligence
+        call_interactions = [
+            LeadInteraction(
+                id="c1",
+                lead_id="123",
+                interaction_type="call",
+                direction="inbound",
+                content="Spoke with Rajesh. Impressed with CTI telephony but had hesitation regarding annual budget."
+            )
+        ]
+        intel = analyze_call_intelligence(call_interactions)
+        self.assertIsNotNone(intel)
+        self.assertTrue(intel.hesitation_detected)
+        self.assertGreater(intel.talk_ratio_customer, 0.0)
+        self.assertGreater(intel.talk_ratio_rep, 0.0)
+        self.assertIn("Talk-to-Listen", intel.speech_summary)
+
+    def test_portfolio_radar_endpoint(self):
+        client = TestClient(app)
+        resp = client.get("/api/portfolio/radar")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertGreaterEqual(data["total_leads"], 1)
+        self.assertGreaterEqual(data["average_health_score"], 1.0)
+        self.assertTrue(len(data["leads"]) > 0)
+
+    def test_reengage_endpoint(self):
+        client = TestClient(app)
+        resp = client.post("/api/leads/123/reengage")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["lead_id"], "123")
+        self.assertIn("Rajesh", data["recipient_name"])
+        self.assertIn("Dear Rajesh", data["email_body"])
+        self.assertTrue(len(data["executive_call_agenda"]) >= 2)
+        self.assertIn(data["urgency_level"], ("Critical", "Elevated", "Standard"))
+
+    def test_accounts_endpoint(self):
+        client = TestClient(app)
+        resp = client.get("/api/accounts")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(len(data) >= 1)
+        apex_acc = next((a for a in data if "Apex" in a["company_name"]), None)
+        self.assertIsNotNone(apex_acc)
+        self.assertGreaterEqual(apex_acc["total_contacts"], 1)
+        self.assertGreaterEqual(apex_acc["collective_health_score"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
